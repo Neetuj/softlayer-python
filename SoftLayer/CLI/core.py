@@ -32,11 +32,12 @@ Storage:
   nas       View NAS details
 
 General:
+  billing   View ordered resources and their billing cost 
   config    View and edit configuration for this tool
   ticket    Manage account tickets
   summary   Display an overall summary of your account
   help      Show help
-
+  
 See 'sl help <module>' for more information on a specific module.
 
 To use most commands your SoftLayer username and api_key need to be configured.
