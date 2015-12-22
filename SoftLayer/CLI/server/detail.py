@@ -1,13 +1,13 @@
 """Get details for a hardware device."""
 # :license: MIT, see LICENSE for more details.
 
+import click
+
 import SoftLayer
 from SoftLayer.CLI import environment
 from SoftLayer.CLI import formatting
 from SoftLayer.CLI import helpers
 from SoftLayer import utils
-
-import click
 
 
 @click.command()
@@ -24,9 +24,9 @@ def cli(env, identifier, passwords, price):
 
     hardware = SoftLayer.HardwareManager(env.client)
 
-    table = formatting.KeyValueTable(['Name', 'Value'])
-    table.align['Name'] = 'r'
-    table.align['Value'] = 'l'
+    table = formatting.KeyValueTable(['name', 'value'])
+    table.align['name'] = 'r'
+    table.align['value'] = 'l'
 
     hardware_id = helpers.resolve_id(hardware.resolve_ids,
                                      identifier,
@@ -62,11 +62,14 @@ def cli(env, identifier, passwords, price):
     table.add_row(
         ['created', result['provisionDate'] or formatting.blank()])
 
-    table.add_row(['owner', formatting.FormattedItem(
-        utils.lookup(result, 'billingItem', 'orderItem',
-                     'order', 'userRecord',
-                     'username') or formatting.blank()
-    )])
+    if utils.lookup(result, 'billingItem') != []:
+        table.add_row(['owner', formatting.FormattedItem(
+            utils.lookup(result, 'billingItem', 'orderItem',
+                         'order', 'userRecord',
+                         'username') or formatting.blank(),
+        )])
+    else:
+        table.add_row(['owner', formatting.blank()])
 
     vlan_table = formatting.Table(['type', 'number', 'id'])
 
@@ -95,12 +98,7 @@ def cli(env, identifier, passwords, price):
             pass_table.add_row([item['username'], item['password']])
         table.add_row(['remote users', pass_table])
 
-    tag_row = []
-    for tag in result['tagReferences']:
-        tag_row.append(tag['tag']['name'])
-
-    if tag_row:
-        table.add_row(['tags', formatting.listing(tag_row, separator=',')])
+    table.add_row(['tags', formatting.tags(result['tagReferences'])])
 
     # Test to see if this actually has a primary (public) ip address
     try:
@@ -114,4 +112,4 @@ def cli(env, identifier, passwords, price):
     except SoftLayer.SoftLayerAPIError:
         pass
 
-    return table
+    env.fout(table)

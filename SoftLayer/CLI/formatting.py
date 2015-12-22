@@ -13,6 +13,7 @@ import os
 import click
 import prettytable
 
+from SoftLayer.CLI import exceptions
 from SoftLayer import utils
 
 FALSE_VALUES = ['0', 'false', 'FALSE', 'no', 'False']
@@ -50,7 +51,7 @@ def format_output(data, fmt='table'):  # pylint: disable=R0911,R0912
     # responds to .formatted
     if hasattr(data, 'formatted'):
         if fmt == 'table':
-            return str(data.formatted)
+            return data.formatted
 
     # responds to .separator
     if hasattr(data, 'separator'):
@@ -164,6 +165,20 @@ def transaction_status(transaction):
         transaction['transactionStatus'].get('friendlyName'))
 
 
+def tags(tag_references):
+    """Returns a formatted list of tags."""
+    if not tag_references:
+        return blank()
+
+    tag_row = []
+    for tag_detail in tag_references:
+        tag = utils.lookup(tag_detail, 'tag', 'name')
+        if tag is not None:
+            tag_row.append(tag)
+
+    return listing(tag_row, separator=', ')
+
+
 def confirm(prompt_str, default=False):
     """Show a confirmation prompt to a command-line user.
 
@@ -262,7 +277,11 @@ class Table(object):
         """Returns a new prettytable instance."""
         table = prettytable.PrettyTable(self.columns)
         if self.sortby:
-            table.sortby = self.sortby
+            if self.sortby in self.columns:
+                table.sortby = self.sortby
+            else:
+                msg = "Column (%s) doesn't exist to sort by" % self.sortby
+                raise exceptions.CLIAbort(msg)
         for a_col, alignment in self.align.items():
             table.align[a_col] = alignment
 
@@ -330,7 +349,7 @@ class FormattedItem(object):
         return self < other or self == other
 
     def __ge__(self, other):
-        return not self < other
+        return self >= other
 
 
 def _format_python_value(value):
@@ -338,3 +357,62 @@ def _format_python_value(value):
     if hasattr(value, 'to_python'):
         return value.to_python()
     return value
+
+
+def iter_to_table(value):
+    """Convert raw API responses to response tables."""
+    if isinstance(value, list):
+        return _format_list(value)
+    if isinstance(value, dict):
+        return _format_dict(value)
+    return value
+
+
+def _format_dict(result):
+    """Format dictionary responses into key-value table."""
+
+    table = KeyValueTable(['name', 'value'])
+    table.align['name'] = 'r'
+    table.align['value'] = 'l'
+
+    for key, value in result.items():
+        value = iter_to_table(value)
+        table.add_row([key, value])
+
+    return table
+
+
+def _format_list(result):
+    """Format list responses into a table."""
+
+    if not result:
+        return result
+
+    if isinstance(result[0], dict):
+        return _format_list_objects(result)
+
+    table = Table(['value'])
+    for item in result:
+        table.add_row([iter_to_table(item)])
+    return table
+
+
+def _format_list_objects(result):
+    """Format list of objects into a table."""
+
+    all_keys = set()
+    for item in result:
+        all_keys = all_keys.union(item.keys())
+
+    all_keys = sorted(all_keys)
+    table = Table(all_keys)
+
+    for item in result:
+        values = []
+        for key in all_keys:
+            value = iter_to_table(item.get(key))
+            values.append(value)
+
+        table.add_row(values)
+
+    return table

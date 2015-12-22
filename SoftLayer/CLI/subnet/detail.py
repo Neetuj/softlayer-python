@@ -1,12 +1,12 @@
-"""Cancel a subnet."""
+"""Get subnet details."""
 # :license: MIT, see LICENSE for more details.
+
+import click
 
 import SoftLayer
 from SoftLayer.CLI import environment
 from SoftLayer.CLI import formatting
 from SoftLayer.CLI import helpers
-
-import click
 
 
 @click.command()
@@ -19,16 +19,16 @@ import click
               help="Hide hardware listing")
 @environment.pass_env
 def cli(env, identifier, no_vs, no_hardware):
-    """Cancel a subnet."""
+    """Get subnet details."""
 
     mgr = SoftLayer.NetworkManager(env.client)
     subnet_id = helpers.resolve_id(mgr.resolve_subnet_ids, identifier,
                                    name='subnet')
     subnet = mgr.get_subnet(subnet_id)
 
-    table = formatting.KeyValueTable(['Name', 'Value'])
-    table.align['Name'] = 'r'
-    table.align['Value'] = 'l'
+    table = formatting.KeyValueTable(['name', 'value'])
+    table.align['name'] = 'r'
+    table.align['value'] = 'l'
 
     table.add_row(['id', subnet['id']])
     table.add_row(['identifier',
@@ -68,4 +68,4 @@ def cli(env, identifier, no_vs, no_hardware):
         else:
             table.add_row(['hardware', 'none'])
 
-    return table
+    env.fout(table)

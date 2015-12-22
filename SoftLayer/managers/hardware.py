@@ -21,6 +21,17 @@ EXTRA_CATEGORIES = ['pri_ipv6_addresses',
 class HardwareManager(utils.IdentifierMixin, object):
     """Manage hardware devices.
 
+    Example::
+
+       # Initialize the Manager.
+       # env variables. These can also be specified in ~/.softlayer,
+       # or passed directly to SoftLayer.Client()
+       # SL_USERNAME = YOUR_USERNAME
+       # SL_API_KEY = YOUR_API_KEY
+       import SoftLayer
+       client = SoftLayer.Client()
+       mgr = SoftLayer.HardwareManager(client)
+
     :param SoftLayer.API.Client client: an API client instance
     :param SoftLayer.managers.OrderingManager ordering_manager: an optional
                                               manager to handle ordering.
@@ -40,6 +51,11 @@ class HardwareManager(utils.IdentifierMixin, object):
     def cancel_hardware(self, hardware_id, reason='unneeded', comment='',
                         immediate=False):
         """Cancels the specified dedicated server.
+
+        Example::
+
+            # Cancels hardware id 1234
+            result = mgr.cancel_hardware(hardware_id=1234)
 
         :param int hardware_id: The ID of the hardware to be cancelled.
         :param string reason: The reason code for the cancellation. This should
@@ -83,6 +99,12 @@ class HardwareManager(utils.IdentifierMixin, object):
                   hardware. This list will contain both dedicated servers and
                   bare metal computing instances
 
+       Example::
+
+            # Using a custom object-mask. Will get ONLY what is specified
+            # These will stem from the SoftLayer_Hardware_Server datatype
+            object_mask = "mask[hostname,monitoringRobot[robotStatus]]"
+            result = mgr.list_hardware(mask=object_mask)
         """
         if 'mask' not in kwargs:
             hw_items = [
@@ -152,6 +174,11 @@ class HardwareManager(utils.IdentifierMixin, object):
         :returns: A dictionary containing a large amount of information about
                   the specified server.
 
+        Example::
+
+            object_mask = "mask[id,networkVlans[vlanNumber]]"
+            # Object masks are optional
+            result = mgr.get_hardware(hardware_id=1234,mask=object_mask)
         """
 
         if 'mask' not in kwargs:
@@ -219,6 +246,10 @@ class HardwareManager(utils.IdentifierMixin, object):
         """Reboot a server into the a recsue kernel.
 
         :param integer instance_id: the server ID to rescue
+
+        Example::
+
+            result = mgr.rescue(1234)
         """
         return self.hardware.bootToRescueLayer(id=hardware_id)
 
@@ -230,6 +261,16 @@ class HardwareManager(utils.IdentifierMixin, object):
                             True (default) means the public interface.
                             False indicates the private interface.
         :param int speed: The port speed to set.
+
+        .. warning::
+            A port speed of 0 will disable the interface.
+
+        Example::
+
+            #change the Public interface to 10Mbps on instance 12345
+            result = mgr.change_port_speed(hardware_id=12345,
+                                        public=True, speed=10)
+            # result will be True or an Exception
         """
         if public:
             func = self.hardware.setPublicNetworkInterfaceSpeed
@@ -250,8 +291,6 @@ class HardwareManager(utils.IdentifierMixin, object):
         :param string os: operating system name
         :param int port_speed: Port speed in Mbps
         :param list ssh_keys: list of ssh key ids
-        :param int public_vlan: public vlan id
-        :param int private_vlan: private vlan id
         :param string post_uri: The URI of the post-install script to run
                                 after reload
         :param boolean hourly: True if using hourly pricing (default).
@@ -324,7 +363,10 @@ class HardwareManager(utils.IdentifierMixin, object):
         port_speeds = []
         for item in package['items']:
             if all([item['itemCategory']['categoryCode'] == 'port_speed',
-                    not _is_private_port_speed_item(item)]):
+                    # Hide private options
+                    not _is_private_port_speed_item(item),
+                    # Hide unbonded options
+                    _is_bonded(item)]):
                 port_speeds.append({
                     'name': item['description'],
                     'key': item['capacity'],
@@ -360,7 +402,7 @@ items[
     prices
 ],
 activePresets,
-regions[location[location]]
+regions[location[location[priceGroups]]]
 '''
 
         package_type = 'BARE_METAL_CPU_FAST_PROVISION'
@@ -379,8 +421,6 @@ regions[location[location]]
                               os=None,
                               port_speed=None,
                               ssh_keys=None,
-                              public_vlan=None,
-                              private_vlan=None,
                               post_uri=None,
                               hourly=True,
                               no_public=False,
@@ -390,41 +430,41 @@ regions[location[location]]
         extras = extras or []
 
         package = self._get_package()
+        location = _get_location(package, location)
 
         prices = []
         for category in ['pri_ip_addresses',
                          'vpn_management',
                          'remote_management']:
             prices.append(_get_default_price_id(package['items'],
-                                                category,
-                                                hourly))
+                                                option=category,
+                                                hourly=hourly,
+                                                location=location))
 
-        prices.append(_get_os_price_id(package['items'], os))
+        prices.append(_get_os_price_id(package['items'], os,
+                                       location=location))
         prices.append(_get_bandwidth_price_id(package['items'],
                                               hourly=hourly,
-                                              no_public=no_public))
+                                              no_public=no_public,
+                                              location=location))
         prices.append(_get_port_speed_price_id(package['items'],
                                                port_speed,
-                                               no_public))
+                                               no_public,
+                                               location=location))
 
         for extra in extras:
-            prices.append(_get_extra_price_id(package['items'], extra, hourly))
+            prices.append(_get_extra_price_id(package['items'],
+                                              extra, hourly,
+                                              location=location))
 
         hardware = {
             'hostname': hostname,
             'domain': domain,
         }
 
-        if public_vlan:
-            hardware['primaryNetworkComponent'] = {
-                "networkVlan": {"id": int(public_vlan)}}
-        if private_vlan:
-            hardware['primaryBackendNetworkComponent'] = {
-                "networkVlan": {"id": int(private_vlan)}}
-
         order = {
             'hardware': [hardware],
-            'location': _get_location_key(package, location),
+            'location': location['keyname'],
             'prices': [{'id': price} for price in prices],
             'packageId': package['id'],
             'presetId': _get_preset_id(package, size),
@@ -462,7 +502,7 @@ regions[location[location]]
             return [result['id'] for result in results]
 
     def edit(self, hardware_id, userdata=None, hostname=None, domain=None,
-             notes=None):
+             notes=None, tags=None):
         """Edit hostname, domain name, notes, user data of the hardware.
 
         Parameters set to None will be ignored and not attempted to be updated.
@@ -473,12 +513,22 @@ regions[location[location]]
         :param string hostname: valid hostname
         :param string domain: valid domain name
         :param string notes: notes about this particular hardware
+        :param string tags: tags to set on the hardware as a comma separated
+                            list. Use the empty string to remove all tags.
 
+        Example::
+
+            # Change the hostname on instance 12345 to 'something'
+            result = mgr.edit(hardware_id=12345 , hostname="something")
+            #result will be True or an Exception
         """
 
         obj = {}
         if userdata:
             self.hardware.setUserMetadata([userdata], id=hardware_id)
+
+        if tags is not None:
+            self.hardware.setTags(tags, id=hardware_id)
 
         if hostname:
             obj['hostname'] = hostname
@@ -510,6 +560,11 @@ regions[location[location]]
         :param bool raid_controller: Update the raid controller firmware.
         :param bool bios: Update the bios firmware.
         :param bool hard_drive: Update the hard drive firmware.
+
+        Example::
+
+            # Check the servers active transactions to see progress
+            result = mgr.update_firmware(hardware_id=1234)
         """
 
         return self.hardware.createFirmwareUpdateTransaction(
@@ -517,39 +572,48 @@ regions[location[location]]
             id=hardware_id)
 
 
-def _get_extra_price_id(items, key_name, hourly):
+def _get_extra_price_id(items, key_name, hourly, location):
     """Returns a price id attached to item with the given key_name."""
 
     for item in items:
-        if not utils.lookup(item, 'keyName') == key_name:
+        if utils.lookup(item, 'keyName') != key_name:
             continue
 
         for price in item['prices']:
-            if _matches_billing(price, hourly):
-                return price['id']
+            if not _matches_billing(price, hourly):
+                continue
+
+            if not _matches_location(price, location):
+                continue
+
+            return price['id']
 
     raise SoftLayer.SoftLayerError(
         "Could not find valid price for extra option, '%s'" % key_name)
 
 
-def _get_default_price_id(items, option, hourly):
+def _get_default_price_id(items, option, hourly, location):
     """Returns a 'free' price id given an option."""
 
     for item in items:
-        if not utils.lookup(item, 'itemCategory', 'categoryCode') == option:
+        if utils.lookup(item, 'itemCategory', 'categoryCode') != option:
             continue
 
         for price in item['prices']:
             if all([float(price.get('hourlyRecurringFee', 0)) == 0.0,
                     float(price.get('recurringFee', 0)) == 0.0,
-                    _matches_billing(price, hourly)]):
+                    _matches_billing(price, hourly),
+                    _matches_location(price, location)]):
                 return price['id']
 
     raise SoftLayer.SoftLayerError(
         "Could not find valid price for '%s' option" % option)
 
 
-def _get_bandwidth_price_id(items, hourly=True, no_public=False):
+def _get_bandwidth_price_id(items,
+                            hourly=True,
+                            no_public=False,
+                            location=None):
     """Choose a valid price id for bandwidth."""
 
     # Prefer pay-for-use data transfer with hourly
@@ -557,55 +621,66 @@ def _get_bandwidth_price_id(items, hourly=True, no_public=False):
 
         capacity = float(item.get('capacity', 0))
         # Hourly and private only do pay-as-you-go bandwidth
-        if any([not utils.lookup(item,
-                                 'itemCategory',
-                                 'categoryCode') == 'bandwidth',
+        if any([utils.lookup(item,
+                             'itemCategory',
+                             'categoryCode') != 'bandwidth',
                 (hourly or no_public) and capacity != 0.0,
                 not (hourly or no_public) and capacity == 0.0]):
             continue
 
         for price in item['prices']:
-            if _matches_billing(price, hourly):
-                return price['id']
+            if not _matches_billing(price, hourly):
+                continue
+            if not _matches_location(price, location):
+                continue
+
+            return price['id']
 
     raise SoftLayer.SoftLayerError(
         "Could not find valid price for bandwidth option")
 
 
-def _get_os_price_id(items, os):
+def _get_os_price_id(items, os, location):
     """Returns the price id matching."""
 
     for item in items:
-        if any([not utils.lookup(item,
-                                 'itemCategory',
-                                 'categoryCode') == 'os',
-                not utils.lookup(item,
-                                 'softwareDescription',
-                                 'referenceCode') == os]):
+        if any([utils.lookup(item,
+                             'itemCategory',
+                             'categoryCode') != 'os',
+                utils.lookup(item,
+                             'softwareDescription',
+                             'referenceCode') != os]):
             continue
 
         for price in item['prices']:
+            if not _matches_location(price, location):
+                continue
+
             return price['id']
 
     raise SoftLayer.SoftLayerError("Could not find valid price for os: '%s'" %
                                    os)
 
 
-def _get_port_speed_price_id(items, port_speed, no_public):
+def _get_port_speed_price_id(items, port_speed, no_public, location):
     """Choose a valid price id for port speed."""
 
     for item in items:
-        if not utils.lookup(item,
-                            'itemCategory',
-                            'categoryCode') == 'port_speed':
+        if utils.lookup(item,
+                        'itemCategory',
+                        'categoryCode') != 'port_speed':
             continue
 
         # Check for correct capacity and if the item matches private only
         if any([int(utils.lookup(item, 'capacity')) != port_speed,
-                _is_private_port_speed_item(item) != no_public]):
+                _is_private_port_speed_item(item) != no_public,
+                not _is_bonded(item)]):
             continue
 
         for price in item['prices']:
+            if not _matches_location(price, location):
+                continue
+
             return price['id']
 
     raise SoftLayer.SoftLayerError(
@@ -613,9 +688,24 @@ def _get_port_speed_price_id(items, port_speed, no_public):
 
 
 def _matches_billing(price, hourly):
-    """Return if the price object is hourly and/or monthly."""
+    """Return True if the price object is hourly and/or monthly."""
     return any([hourly and price.get('hourlyRecurringFee') is not None,
                 not hourly and price.get('recurringFee') is not None])
+
+
+def _matches_location(price, location):
+    """Return True if the price object matches the location."""
+    # the price has no location restriction
+    if not price.get('locationGroupId'):
+        return True
+
+    # Check to see if any of the location groups match the location group
+    # of this price object
+    for group in location['location']['location']['priceGroups']:
+        if group['id'] == price['locationGroupId']:
+            return True
+
+    return False
 
 
 def _is_private_port_speed_item(item):
@@ -627,11 +717,20 @@ def _is_private_port_speed_item(item):
     return False
 
 
-def _get_location_key(package, location):
+def _is_bonded(item):
+    """Determine if the item refers to a bonded port."""
+    for attribute in item['attributes']:
+        if attribute['attributeTypeKeyName'] == 'NON_LACP':
+            return False
+
+    return True
+
+
+def _get_location(package, location):
     """Get the longer key with a short location name."""
     for region in package['regions']:
         if region['location']['location']['name'] == location:
-            return region['keyname']
+            return region
 
     raise SoftLayer.SoftLayerError("Could not find valid location for: '%s'"
                                    % location)

@@ -1,13 +1,13 @@
 """Command lines which modify power states."""
 # :license: MIT, see LICENSE for more details.
 
+import click
+
 import SoftLayer
 from SoftLayer.CLI import environment
 from SoftLayer.CLI import exceptions
 from SoftLayer.CLI import formatting
 from SoftLayer.CLI import helpers
-
-import click
 
 
 @click.command()
@@ -101,6 +101,7 @@ def pause(env, identifier):
 
 @click.command()
 @click.argument('identifier')
+@environment.pass_env
 def resume(env, identifier):
     """Resumes a paused virtual server."""
 

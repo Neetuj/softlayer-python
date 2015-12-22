@@ -1,13 +1,13 @@
 """Power commands."""
 # :license: MIT, see LICENSE for more details.
 
+import click
+
 import SoftLayer
 from SoftLayer.CLI import environment
 from SoftLayer.CLI import exceptions
 from SoftLayer.CLI import formatting
 from SoftLayer.CLI import helpers
-
-import click
 
 
 @click.command()
@@ -66,7 +66,7 @@ def power_on(env, identifier):
 @click.argument('identifier')
 @environment.pass_env
 def power_cycle(env, identifier):
-    """Power on a server."""
+    """Power cycle a server."""
 
     mgr = SoftLayer.HardwareManager(env.client)
     hw_id = helpers.resolve_id(mgr.resolve_ids, identifier, 'hardware')

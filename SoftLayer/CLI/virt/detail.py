@@ -1,13 +1,13 @@
 """Get details for a virtual server."""
 # :license: MIT, see LICENSE for more details.
 
+import click
+
 import SoftLayer
 from SoftLayer.CLI import environment
 from SoftLayer.CLI import formatting
 from SoftLayer.CLI import helpers
 from SoftLayer import utils
-
-import click
 
 
 @click.command()
@@ -17,13 +17,13 @@ import click
               help='Show passwords (check over your shoulder!)')
 @click.option('--price', is_flag=True, help='Show associated prices')
 @environment.pass_env
-def cli(self, identifier, passwords=False, price=False):
+def cli(env, identifier, passwords=False, price=False):
     """Get details for a virtual server."""
 
-    vsi = SoftLayer.VSManager(self.client)
-    table = formatting.KeyValueTable(['Name', 'Value'])
-    table.align['Name'] = 'r'
-    table.align['Value'] = 'l'
+    vsi = SoftLayer.VSManager(env.client)
+    table = formatting.KeyValueTable(['name', 'value'])
+    table.align['name'] = 'r'
+    table.align['value'] = 'l'
 
     vs_id = helpers.resolve_id(vsi.resolve_ids, identifier, 'VS')
     result = vsi.get_instance(vs_id)
@@ -67,11 +67,14 @@ def cli(self, identifier, passwords=False, price=False):
     table.add_row(['private_cpu', result['dedicatedAccountHostOnlyFlag']])
     table.add_row(['created', result['createDate']])
     table.add_row(['modified', result['modifyDate']])
-    table.add_row(['owner', formatting.FormattedItem(
-        utils.lookup(result, 'billingItem', 'orderItem',
-                     'order', 'userRecord',
-                     'username') or formatting.blank(),
-    )])
+    if utils.lookup(result, 'billingItem') != []:
+        table.add_row(['owner', formatting.FormattedItem(
+            utils.lookup(result, 'billingItem', 'orderItem',
+                         'order', 'userRecord',
+                         'username') or formatting.blank(),
+        )])
+    else:
+        table.add_row(['owner', formatting.blank()])
 
     vlan_table = formatting.Table(['type', 'number', 'id'])
     for vlan in result['networkVlans']:
@@ -92,18 +95,15 @@ def cli(self, identifier, passwords=False, price=False):
             pass_table.add_row([item['username'], item['password']])
         table.add_row(['users', pass_table])
 
-    tag_row = []
-    for tag in result['tagReferences']:
-        tag_row.append(tag['tag']['name'])
-
-    if tag_row:
-        table.add_row(['tags', formatting.listing(tag_row, separator=', ')])
+    table.add_row(['tags', formatting.tags(result['tagReferences'])])
 
     # Test to see if this actually has a primary (public) ip address
     try:
         if not result['privateNetworkOnlyFlag']:
-            ptr_domains = (self.client['Virtual_Guest']
-                           .getReverseDomainRecords(id=vs_id))
+            ptr_domains = env.client.call(
+                'Virtual_Guest', 'getReverseDomainRecords',
+                id=vs_id,
+            )
 
             for ptr_domain in ptr_domains:
                 for ptr in ptr_domain['resourceRecords']:
@@ -111,4 +111,4 @@ def cli(self, identifier, passwords=False, price=False):
     except SoftLayer.SoftLayerAPIError:
         pass
 
-    return table
+    env.fout(table)

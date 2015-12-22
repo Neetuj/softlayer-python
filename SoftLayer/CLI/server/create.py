@@ -1,6 +1,8 @@
 """Order/create a dedicated server."""
 # :license: MIT, see LICENSE for more details.
 
+import click
+
 import SoftLayer
 from SoftLayer.CLI import environment
 from SoftLayer.CLI import exceptions
@@ -8,36 +10,49 @@ from SoftLayer.CLI import formatting
 from SoftLayer.CLI import helpers
 from SoftLayer.CLI import template
 
-import click
-
 
 @click.command(epilog="See 'slcli server create-options' for valid options.")
-@click.option('--hostname', '-H', help="Host portion of the FQDN")
-@click.option('--domain', '-D', help="Domain portion of the FQDN")
-@click.option('--size', '-s', help="Hardware size")
-@click.option('--os', '-o', help="OS install code")
-@click.option('--datacenter', '-d', help="Datacenter shortname")
-@click.option('--port-speed', type=click.INT, help="Port speeds")
+@click.option('--hostname', '-H',
+              help="Host portion of the FQDN",
+              required=True,
+              prompt=True)
+@click.option('--domain', '-D',
+              help="Domain portion of the FQDN",
+              required=True,
+              prompt=True)
+@click.option('--size', '-s',
+              help="Hardware size",
+              required=True,
+              prompt=True)
+@click.option('--os', '-o', help="OS install code",
+              required=True,
+              prompt=True)
+@click.option('--datacenter', '-d', help="Datacenter shortname",
+              required=True,
+              prompt=True)
+@click.option('--port-speed',
+              type=click.INT,
+              help="Port speeds",
+              required=True,
+              prompt=True)
 @click.option('--billing',
               type=click.Choice(['hourly', 'monthly']),
               default='hourly',
+              show_default=True,
               help="Billing rate")
 @click.option('--postinstall', '-i', help="Post-install script to download")
 @helpers.multi_option('--key', '-k',
                       help="SSH keys to add to the root user")
-@click.option('--vlan-public',
-              help="The ID of the public VLAN on which you want the virtual "
-              "server placed",
-              type=click.INT)
-@click.option('--vlan-private',
-              help="The ID of the private VLAN on which you want the virtual "
-                   "server placed",
-              type=click.INT)
+@click.option('--no-public',
+              is_flag=True,
+              help="Private network only")
 @helpers.multi_option('--extra', '-e', help="Extra options")
 @click.option('--test',
               is_flag=True,
               help="Do not actually create the virtual server")
 @click.option('--template', '-t',
+              is_eager=True,
+              callback=template.TemplateCallback(list_args=['key']),
               help="A template file that defaults the command-line options",
               type=click.Path(exists=True, readable=True, resolve_path=True))
 @click.option('--export',
@@ -50,8 +65,6 @@ import click
 @environment.pass_env
 def cli(env, **args):
     """Order/create a dedicated server."""
-
-    template.update_with_template_args(args, list_args=['key'])
     mgr = SoftLayer.HardwareManager(env.client)
 
     # Get the SSH keys
@@ -65,8 +78,6 @@ def cli(env, **args):
         'hostname': args['hostname'],
         'domain': args['domain'],
         'size': args['size'],
-        'public_vlan': args.get('vlan_public'),
-        'private_vlan': args.get('vlan_private'),
         'location': args.get('datacenter'),
         'ssh_keys': ssh_keys,
         'post_uri': args.get('postinstall'),
@@ -107,7 +118,8 @@ def cli(env, **args):
         export_file = args.pop('export')
         template.export_to_template(export_file, args,
                                     exclude=['wait', 'test'])
-        return 'Successfully exported options to a template file.'
+        env.fout('Successfully exported options to a template file.')
+        return
 
     if do_create:
         if not (env.skip_confirmations or formatting.confirm(
@@ -124,4 +136,4 @@ def cli(env, **args):
         table.add_row(['created', result['orderDate']])
         output = table
 
-    return output
+    env.fout(output)

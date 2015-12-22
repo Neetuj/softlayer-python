@@ -1,5 +1,7 @@
-"""List firewalls."""
+"""Cancels a firewall."""
 # :license: MIT, see LICENSE for more details.
+
+import click
 
 import SoftLayer
 from SoftLayer.CLI import environment
@@ -7,14 +9,12 @@ from SoftLayer.CLI import exceptions
 from SoftLayer.CLI import firewall
 from SoftLayer.CLI import formatting
 
-import click
-
 
 @click.command()
 @click.argument('identifier')
 @environment.pass_env
 def cli(env, identifier):
-    """List firewalls."""
+    """Cancels a firewall."""
 
     mgr = SoftLayer.FirewallManager(env.client)
     firewall_type, firewall_id = firewall.parse_id(identifier)
@@ -31,4 +31,4 @@ def cli(env, identifier):
     else:
         raise exceptions.CLIAbort('Unknown firewall type: %s' % firewall_type)
 
-    return 'Firewall with id %s is being cancelled!' % identifier
+    env.fout('Firewall with id %s is being cancelled!' % identifier)

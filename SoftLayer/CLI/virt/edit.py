@@ -1,12 +1,12 @@
 """Edit a virtual server's details."""
 # :license: MIT, see LICENSE for more details.
 
+import click
+
 import SoftLayer
 from SoftLayer.CLI import environment
 from SoftLayer.CLI import exceptions
 from SoftLayer.CLI import helpers
-
-import click
 
 
 @click.command()
@@ -39,7 +39,9 @@ def cli(env, identifier, domain, userfile, tag, hostname, userdata):
 
     data['hostname'] = hostname
     data['domain'] = domain
-    data['tags'] = ','.join(tag)
+
+    if tag:
+        data['tags'] = ','.join(tag)
 
     vsi = SoftLayer.VSManager(env.client)
     vs_id = helpers.resolve_id(vsi.resolve_ids, identifier, 'VS')
