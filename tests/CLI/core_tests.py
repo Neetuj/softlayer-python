@@ -31,7 +31,7 @@ class CoreTests(testing.TestCase):
         with mock.patch('logging.getLogger') as log_mock:
             result = self.run_command(['-vvv', 'vs', 'list'])
 
-            self.assertEqual(result.exit_code, 0)
+            self.assert_no_fail(result)
             log_mock().addHandler.assert_called_with(mock.ANY)
             log_mock().setLevel.assert_called_with(logging.DEBUG)
 
@@ -39,13 +39,13 @@ class CoreTests(testing.TestCase):
         env = environment.Environment()
         result = self.run_command(['vs', 'list'], env=env)
 
-        self.assertEqual(result.exit_code, 0)
+        self.assert_no_fail(result)
         self.assertIsNotNone(env.client)
 
     def test_diagnostics(self):
         result = self.run_command(['-v', 'vs', 'list'])
 
-        self.assertEqual(result.exit_code, 0)
+        self.assert_no_fail(result)
         self.assertIn('SoftLayer_Account::getVirtualGuests', result.output)
         self.assertIn('"execution_time"', result.output)
         self.assertIn('"api_calls"', result.output)
@@ -106,6 +106,9 @@ def recursive_subcommand_loader(root, current_path=''):
         new_path = '%s:%s' % (current_path, command)
         logging.info("loading %s", new_path)
         new_root = root.get_command(ctx, command)
+        if new_root is None:
+            raise Exception('Could not load command: %s' % command)
+
         for path, cmd in recursive_subcommand_loader(new_root,
                                                      current_path=new_path):
             yield path, cmd
